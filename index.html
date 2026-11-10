@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trò chơi kéo thả: Phân loại nguyên tố</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Thêm thư viện hiệu ứng pháo hoa và âm thanh -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+        }
+        .draggable-item {
+            cursor: grab;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .draggable-item:active {
+            cursor: grabbing;
+            transform: scale(0.95);
+        }
+        .drop-zone {
+            min-height: 200px;
+            transition: background-color 0.3s;
+        }
+        .drop-zone.dragover {
+            background-color: #e2e8f0;
+            border: 2px dashed #4a5568;
+        }
+        
+        /* Bảng màu từ ảnh gốc */
+        .bg-title-red { color: #ff0000; }
+        .bg-item-green { background-color: #dcedc8; border: 1px solid #7cb342; }
+        .bg-item-blue { background-color: #b3e5fc; border: 1px solid #29b6f6; }
+        .bg-header-green { background-color: #689f38; color: white; }
+        .bg-col-body { background-color: #dcedc8; opacity: 0.8;}
+    </style>
+</head>
+<body class="p-4 md:p-8 flex flex-col items-center">
+
+    <div class="text-center w-full max-w-6xl mb-8">
+        <h1 class="text-4xl md:text-6xl font-bold bg-title-red mb-4">VÒNG QUAY MAY MẮN</h1>
+        <p class="text-xl md:text-3xl text-gray-800">Sắp xếp các cấu hình electron nguyên tử các nguyên tố<br>nhóm A, vào cột tương ứng</p>
+    </div>
+
+    <!-- Khu vực chứa các cấu hình electron để kéo -->
+    <div id="source-container" class="flex flex-wrap justify-center gap-4 mb-10 w-full max-w-5xl p-4 bg-white rounded-lg shadow-sm border border-gray-200 min-h-[150px]">
+        <!-- Các phần tử sẽ được sinh ra bằng JavaScript -->
+    </div>
+
+    <!-- Thông báo kết quả -->
+    <div id="message" class="h-8 mb-4 font-bold text-lg text-center transition-opacity duration-300 opacity-0"></div>
+
+    <!-- Khu vực thả -->
+    <div class="w-full max-w-5xl grid grid-cols-3 border-2 border-gray-600 rounded-lg overflow-hidden shadow-lg">
+        <!-- Cột Kim loại -->
+        <div class="flex flex-col border-r-2 border-gray-600">
+            <div class="bg-orange-500 text-white text-center py-3 text-2xl font-bold border-b-2 border-gray-600">Kim loại</div>
+            <div id="kim-loai" class="drop-zone flex-1 bg-orange-50 p-4 flex flex-col gap-2" data-category="kim-loai"></div>
+        </div>
+        
+        <!-- Cột Phi kim -->
+        <div class="flex flex-col border-r-2 border-gray-600">
+            <div class="bg-blue-500 text-white text-center py-3 text-2xl font-bold border-b-2 border-gray-600">Phi kim</div>
+            <div id="phi-kim" class="drop-zone flex-1 bg-blue-50 p-4 flex flex-col gap-2" data-category="phi-kim"></div>
+        </div>
+
+        <!-- Cột Khí hiếm -->
+        <div class="flex flex-col">
+            <div class="bg-purple-500 text-white text-center py-3 text-2xl font-bold border-b-2 border-gray-600">Khí hiếm</div>
+            <div id="khi-hiem" class="drop-zone flex-1 bg-purple-50 p-4 flex flex-col gap-2" data-category="khi-hiem"></div>
+        </div>
+    </div>
+
+    <div class="mt-8">
+        <button id="reset-btn" class="px-8 py-3 bg-gray-800 text-white font-bold rounded-lg hover:bg-gray-900 transition shadow-lg">Làm lại từ đầu</button>
+    </div>
+
+    <!-- Modal Chúc Mừng -->
+    <div id="win-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50 transition-opacity">
+        <div class="bg-white rounded-2xl p-10 text-center max-w-md w-full shadow-2xl transform scale-100">
+            <div class="text-6xl mb-4">🎉</div>
+            <h2 class="text-4xl font-bold text-red-600 mb-4">Tuyệt vời!</h2>
+            <p class="text-xl text-gray-700 mb-8">Bạn đã phân loại chính xác tất cả các cấu hình electron!</p>
+            <div class="flex flex-col gap-4">
+                <button id="modal-close-btn" class="px-8 py-3 bg-blue-500 text-white font-bold rounded-full hover:bg-blue-600 transition shadow-lg text-lg w-full">Xem Lại Kết Quả</button>
+                <button id="modal-reset-btn" class="px-8 py-3 bg-green-500 text-white font-bold rounded-full hover:bg-green-600 transition shadow-lg text-lg w-full">Chơi Lại Lần Nữa</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Thiết lập Âm thanh với Tone.js
+        const correctSynth = new Tone.Synth({
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 }
+        }).toDestination();
+        
+        const wrongSynth = new Tone.Synth({
+            oscillator: { type: 'sawtooth' },
+            envelope: { attack: 0.1, decay: 0.2, sustain: 0.2, release: 0.5 }
+        }).toDestination();
+
+        async function startTone() {
+            if (Tone.context.state !== 'running') {
+                await Tone.start();
+            }
+        }
+
+        function playCorrectSound() {
+            startTone();
+            correctSynth.triggerAttackRelease("E5", "8n");
+        }
+
+        function playWrongSound() {
+            startTone();
+            wrongSynth.triggerAttackRelease("C3", "8n", Tone.now(), 0.5);
+        }
+
+        function playWinSound() {
+            startTone();
+            const now = Tone.now();
+            correctSynth.triggerAttackRelease("C4", "8n", now);
+            correctSynth.triggerAttackRelease("E4", "8n", now + 0.15);
+            correctSynth.triggerAttackRelease("G4", "8n", now + 0.3);
+            correctSynth.triggerAttackRelease("C5", "4n", now + 0.45);
+        }
+
+        // Dữ liệu các cấu hình electron và đáp án đúng
+        const itemsData = [
+            { id: 'item1', html: '[ Ar ] 3d<sup>5</sup>4s<sup>1</sup>', category: 'kim-loai', class: 'bg-item-green' },
+            { id: 'item2', html: '[ Ar ] 4s<sup>2</sup>', category: 'kim-loai', class: 'bg-item-green' },
+            { id: 'item3', html: '1s<sup>1</sup>', category: 'phi-kim', class: 'bg-item-green' }, // Hydro thường tính là phi kim
+            { id: 'item4', html: '[ Ne ] 3s<sup>2</sup>3p<sup>6</sup>', category: 'khi-hiem', class: 'bg-item-green' },
+            { id: 'item5', html: '1s<sup>2</sup> 2s<sup>2</sup> 2p<sup>6</sup>', category: 'khi-hiem', class: 'bg-item-green' },
+            
+            { id: 'item6', html: '[ Ne ] 3s<sup>2</sup>3p<sup>1</sup>', category: 'kim-loai', class: 'bg-item-green' },
+            { id: 'item7', html: '[ Ar ] 3d<sup>6</sup>4s<sup>2</sup>', category: 'kim-loai', class: 'bg-item-green' },
+            { id: 'item8', html: '[ Ar ] 3d<sup>10</sup>4s<sup>1</sup>', category: 'kim-loai', class: 'bg-item-green' },
+            { id: 'item9', html: '[ Ne ] 3s<sup>2</sup>3p<sup>5</sup>', category: 'phi-kim', class: 'bg-item-green' },
+            
+            { id: 'item10', html: '[ Ne ] 3s<sup>1</sup>', category: 'kim-loai', class: 'bg-item-green' },
+            { id: 'item11', html: '1s<sup>2</sup> 2s<sup>2</sup> 2p<sup>6</sup> 3s<sup>2</sup>', category: 'kim-loai', class: 'bg-item-blue' }, // Khối màu xanh lam trong ảnh
+            { id: 'item12', html: '1s<sup>2</sup> 2s<sup>2</sup> 2p<sup>4</sup>', category: 'phi-kim', class: 'bg-item-green' },
+            { id: 'item13', html: '[ Ne ] 3s<sup>2</sup>3p<sup>4</sup>', category: 'phi-kim', class: 'bg-item-green' },
+            { id: 'item14', html: '1s<sup>2</sup>', category: 'khi-hiem', class: 'bg-item-green' },
+        ];
+
+        const sourceContainer = document.getElementById('source-container');
+        const messageEl = document.getElementById('message');
+        const winModal = document.getElementById('win-modal');
+        let draggedItem = null;
+
+        // Khởi tạo trò chơi
+        function initGame() {
+            winModal.classList.add('hidden');
+            winModal.classList.remove('flex');
+            sourceContainer.innerHTML = '';
+            document.querySelectorAll('.drop-zone').forEach(zone => zone.innerHTML = '');
+            messageEl.style.opacity = '0';
+
+            // Xáo trộn mảng để vị trí ngẫu nhiên
+            const shuffledItems = [...itemsData].sort(() => Math.random() - 0.5);
+
+            shuffledItems.forEach(item => {
+                const el = document.createElement('div');
+                el.id = item.id;
+                el.className = `draggable-item ${item.class} px-4 py-2 text-xl font-bold text-black shadow-sm rounded-sm whitespace-nowrap`;
+                el.innerHTML = item.html;
+                el.draggable = true;
+                el.dataset.category = item.category;
+
+                el.addEventListener('dragstart', handleDragStart);
+                el.addEventListener('dragend', handleDragEnd);
+
+                sourceContainer.appendChild(el);
+            });
+        }
+
+        // Xử lý sự kiện kéo
+        function handleDragStart(e) {
+            startTone(); // Khởi tạo AudioContext khi người dùng tương tác lần đầu
+            draggedItem = this;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', this.id);
+            setTimeout(() => this.classList.add('opacity-50'), 0);
+        }
+
+        function handleDragEnd(e) {
+            this.classList.remove('opacity-50');
+            document.querySelectorAll('.drop-zone').forEach(zone => zone.classList.remove('dragover'));
+            draggedItem = null;
+        }
+
+        // Thiết lập các Drop Zones
+        const dropZones = document.querySelectorAll('.drop-zone');
+        dropZones.forEach(zone => {
+            zone.addEventListener('dragover', e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                zone.classList.add('dragover');
+            });
+
+            zone.addEventListener('dragleave', e => {
+                zone.classList.remove('dragover');
+            });
+
+            zone.addEventListener('drop', e => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+                
+                if (!draggedItem) return;
+
+                const expectedCategory = draggedItem.dataset.category;
+                const dropCategory = zone.dataset.category;
+
+                if (expectedCategory === dropCategory) {
+                    // Kéo đúng
+                    zone.appendChild(draggedItem);
+                    showMessage('Đúng rồi!', 'text-green-600');
+                    playCorrectSound();
+                    checkWin();
+                } else {
+                    // Kéo sai
+                    showMessage('Sai rồi! Hãy thử lại.', 'text-red-600');
+                    playWrongSound();
+                }
+            });
+        });
+
+        // Cho phép kéo thả ngược lại nguồn (tùy chọn)
+        sourceContainer.addEventListener('dragover', e => {
+            e.preventDefault();
+        });
+        sourceContainer.addEventListener('drop', e => {
+            e.preventDefault();
+            if (draggedItem) {
+                sourceContainer.appendChild(draggedItem);
+                messageEl.style.opacity = '0';
+            }
+        });
+
+        // Hiển thị thông báo
+        function showMessage(text, colorClass) {
+            messageEl.textContent = text;
+            messageEl.className = `h-8 mb-4 font-bold text-xl text-center transition-opacity duration-300 opacity-100 ${colorClass}`;
+            setTimeout(() => {
+                messageEl.style.opacity = '0';
+            }, 2000);
+        }
+
+        // Kiểm tra hoàn thành
+        function checkWin() {
+            const remaining = sourceContainer.querySelectorAll('.draggable-item').length;
+            if (remaining === 0) {
+                setTimeout(() => {
+                    playWinSound();
+                    winModal.classList.remove('hidden');
+                    winModal.classList.add('flex');
+                    triggerConfetti();
+                }, 300);
+            }
+        }
+
+        // Hiệu ứng pháo hoa (tung bông)
+        function triggerConfetti() {
+            const duration = 3.5 * 1000;
+            const animationEnd = Date.now() + duration;
+            const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 100 };
+
+            function randomInRange(min, max) {
+                return Math.random() * (max - min) + min;
+            }
+
+            const interval = setInterval(function() {
+                const timeLeft = animationEnd - Date.now();
+                if (timeLeft <= 0) {
+                    return clearInterval(interval);
+                }
+                const particleCount = 50 * (timeLeft / duration);
+                
+                // Bắn từ bên trái
+                confetti(Object.assign({}, defaults, { 
+                    particleCount, 
+                    origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } 
+                }));
+                // Bắn từ bên phải
+                confetti(Object.assign({}, defaults, { 
+                    particleCount, 
+                    origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } 
+                }));
+            }, 250);
+        }
+
+        // Các nút điều khiển
+        document.getElementById('reset-btn').addEventListener('click', initGame);
+        document.getElementById('modal-reset-btn').addEventListener('click', initGame);
+        
+        // Nút xem lại kết quả (đóng modal)
+        document.getElementById('modal-close-btn').addEventListener('click', () => {
+            winModal.classList.add('hidden');
+            winModal.classList.remove('flex');
+        });
+
+        // Khởi chạy khi load trang
+        window.onload = initGame;
+    </script>
+</body>
+</html>
